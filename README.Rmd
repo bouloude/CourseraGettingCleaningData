@@ -1,0 +1,138 @@
+---
+title: "README"
+author: "Julien"
+date: "23 Jan 2015"
+output: html_document
+---
+
+This file describes the script instructions necessary to build the required tidy dataset.
+
+Downloading the data
+====================
+
+We use a classical `download.file` function with the URL provided on the Coursera website.
+The zipped downloaded file is stored in a `data` folder within the working directory.
+
+```{r,echo=FALSE,eval=FALSE}
+if (!file.exists("./data")){dir.create("./data")}
+fileURL <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip"
+download.file(fileURL,destfile="./data/ds.zip",mod="wb",method="curl")
+```
+
+We then use the `unzip` function, which works according to its name. Within the working directory a new directory is created: `UCI HAR Dataset` with all the data in it.
+
+```{r,echo=FALSE,eval=FALSE}
+unzip("./data/ds.zip")
+```
+
+Then we read the `.txt` files using the `read.table` function on
+* the features list: `features.txt` (subdirectory /UCI HAR Dataset): data frame `features`
+* the training data: `X_train.txt`, `y_train.txt`, `subject_train.txt` (subdirectory /UCI HAR Dataset/train): data frames `xtrain`, `ytrain`, `subjecttrain`
+* the test data: `X_test.txt`, `y_test.txt`, `subject_test.txt` (subdirectory /UCI HAR Dataset/test): data frams `xtest`, `ytest`, `subjecttest`
+
+```{r}
+features <- read.table("./UCI HAR Dataset/features.txt",header=FALSE)
+features <- features[,2]
+features <- as.character(features)
+
+xtrain <- read.table("./UCI HAR Dataset/train/X_train.txt",header=FALSE)
+ytrain <- read.table("./UCI HAR Dataset/train/y_train.txt",header=FALSE)
+subjecttrain <- read.table("./UCI HAR Dataset/train/subject_train.txt",header=FALSE)
+xtest <- read.table("./UCI HAR Dataset/test/X_test.txt",header=FALSE)
+ytest <- read.table("./UCI HAR Dataset/test/y_test.txt",header=FALSE)
+subjecttest <- read.table("./UCI HAR Dataset/test/subject_test.txt",header=FALSE)
+```
+
+
+Merging the data
+================
+
+We use the `rbind` function to merge training and test sets and we create three new data frames: `x`, `y`, `subject`.
+
+```{r,echo=FALSE}
+x <- rbind(xtrain,xtest)
+y <- rbind(ytrain,ytest)
+subject <- rbind(subjecttrain,subjecttest)
+```
+
+
+Extracting the measurements on the mean and the standard deviation for each measurement
+=======================================================================================
+
+We write a function `is_mean_or_std()` that detects, within the features names, whether a feature is either a mean or a standard deviation, by extracting strings. It returns `TRUE` is so.
+
+```{r,echo=FALSE}
+is_mean_or_std <- function(x){
+    y <- substr(x,nchar(x)-8,nchar(x)-2)
+    if (y == "-mean()"){return(TRUE)}
+    y <- substr(x,nchar(x)-7,nchar(x)-2)
+    if (y == "-std()"){return(TRUE)}
+    y <- substr(x,nchar(x)-5,nchar(x))
+    if (y == "-std()"){return(TRUE)}
+    y <- substr(x,nchar(x)-6,nchar(x))
+    if (y == "-mean()"){return(TRUE)}
+    FALSE
+}
+```
+
+Then we store the index of `features` which satisfies the `is_mean_or_std` criteria into a `extract_measurement` variable and select these features in `x`:
+
+```{r,echo=FALSE}
+extract_measurement <- which(sapply(features,is_mean_or_std))
+x <- x[,extract_measurement]
+```
+
+There are 66 such variables.
+
+Using descriptive activity names to name the activities in the dataset
+=====================================================================
+
+We read the activity list from the `activity_labels.txt` file.
+
+```{r,echo=FALSE}
+activities <- read.table("./UCI HAR Dataset/activity_labels.txt",header=FALSE)
+activities <- activities[,2]
+```
+
+We use the `mutate` function in the `dplyr` package to match the `y` levels with the corresponding activities.
+
+```{r,echo=FALSE}
+library(dplyr)
+y <- mutate(y,activity = activities[y[,1]])
+```
+
+And we merge `x` and `y$activity` and `subject` into `x`.
+
+```{r,echo=FALSE}
+x <- cbind(x,y$activity,subject)
+```
+
+
+Labelling the dataset with descriptive variable names
+=====================================================
+
+We simply set the names of the `x` dataset using the selected `features` (according to `extract_measurement`), as well as `activity` (variable coming from `y`) and `individual` (variable coming from `subject`).
+
+```{r,echo=FALSE}
+names(x) <- c(features[extract_measurement],"activity","individual")
+```
+
+
+Creating an independant, tidy dataset with the average of each variable for each activity and each subject
+==========================================================================================================
+
+We use the `dplyr` package to `group_by` both `activity` and `individual`. We compute the mean for each other variable using the `summarise_each` function. The data is stored into the `final` data frame.
+
+```{r,echo=FALSE}
+final <- x %>% group_by(activity,individual) %>% summarise_each(funs(mean))
+```
+
+Writing the results
+===================
+
+We use the `write.table` function to export the `final` data frame into the `final.txt` file.
+
+```{r}
+write.table(final,"./final.txt",row.name=FALSE)
+```
+
